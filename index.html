@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Science Day GO! - Phase 1</title>
+    <title>Science Day GO! - Map & AR Catching</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Leaflet CSS & JS -->
@@ -11,186 +11,293 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
-        /* ป้องกันการ Scroll บนมือถือ */
-        body { margin: 0; padding: 0; overflow: hidden; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f3f4f6; }
+        
+        /* ---------------- แผนที่ ---------------- */
         #map { height: 100vh; width: 100vw; z-index: 1; }
         .ui-layer { z-index: 1000; }
-        /* อนิเมชั่นจุดผู้เล่น */
         .player-pulse {
-            background: #3b82f6;
-            border-radius: 50%;
-            height: 20px;
-            width: 20px;
-            box-shadow: 0 0 0 rgba(59, 130, 246, 0.4);
-            animation: pulse 2s infinite;
-            border: 3px solid white;
+            background: #3b82f6; border-radius: 50%; height: 20px; width: 20px;
+            box-shadow: 0 0 0 rgba(59, 130, 246, 0.4); animation: pulse 2s infinite; border: 3px solid white;
         }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
             70% { box-shadow: 0 0 0 20px rgba(59, 130, 246, 0); }
             100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
         }
+
+        /* ---------------- AR Overlay ---------------- */
+        /* ให้ AR Overlay อยู่บนสุด (z-index สูงกว่าแผนที่) */
+        #ar-overlay { z-index: 2000; touch-action: none; /* ป้องกันการเลื่อนหน้าจอเวลาปัด */ }
+        #camera { object-fit: cover; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body>
 
-    <!-- UI ด้านบน -->
-    <div class="ui-layer absolute top-0 w-full bg-white/80 backdrop-blur-sm p-4 shadow-md flex justify-between items-center">
-        <div>
-            <h1 class="text-xl font-extrabold text-indigo-600 tracking-tight">Science GO!</h1>
-            <p class="text-xs text-gray-500 font-medium" id="status-text">กำลังค้นหาสัญญาณ GPS...</p>
+    <!-- ==========================================
+         ส่วนที่ 1: ระบบแผนที่ (Main View)
+         ========================================== -->
+    <div id="map-view">
+        <div class="ui-layer absolute top-0 w-full bg-white/80 backdrop-blur-sm p-4 shadow-md flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-extrabold text-indigo-600 tracking-tight">Science GO!</h1>
+                <p class="text-xs text-gray-500 font-medium" id="status-text">กำลังค้นหาสัญญาณ GPS...</p>
+            </div>
+            <div class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full text-sm font-bold shadow-inner">
+                ระยะจับ: 15 ม.
+            </div>
         </div>
-        <div class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full text-sm font-bold shadow-inner">
-            รัศมีจับ: 15 ม.
+
+        <div id="map"></div>
+
+        <div class="ui-layer absolute bottom-6 w-full flex justify-center px-4 pointer-events-none">
+            <button onclick="centerMapOnPlayer()" class="pointer-events-auto bg-white p-4 rounded-full shadow-lg border-2 border-indigo-100 hover:bg-indigo-50 active:scale-95 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+                </svg>
+            </button>
         </div>
     </div>
 
-    <!-- แผนที่ -->
-    <div id="map"></div>
 
-    <!-- UI ด้านล่าง (ปุ่มจัดการเรดาร์) -->
-    <div class="ui-layer absolute bottom-6 w-full flex justify-center px-4">
-        <button onclick="centerMapOnPlayer()" class="bg-white p-4 rounded-full shadow-lg border-2 border-indigo-100 hover:bg-indigo-50 active:scale-95 transition-transform">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
-            </svg>
-        </button>
+    <!-- ==========================================
+         ส่วนที่ 2: ระบบ AR Catching (Overlay ซ่อนอยู่)
+         ========================================== -->
+    <div id="ar-overlay" class="hidden fixed inset-0 w-full h-full bg-black">
+        
+        <!-- กล้องหลัง -->
+        <video id="camera" autoplay playsinline class="absolute inset-0 w-full h-full z-10"></video>
+        
+        <!-- กระดาน Canvas วาดเกม -->
+        <canvas id="gameCanvas" class="absolute inset-0 w-full h-full z-20"></canvas>
+
+        <!-- UI ของหน้า AR -->
+        <div id="ar-ui" class="absolute inset-0 z-30 flex flex-col justify-between p-6 pointer-events-none">
+            
+            <!-- ป้ายบอกเป้าหมาย และ ปุ่มหนี -->
+            <div class="flex justify-between items-start pointer-events-auto">
+                <div class="bg-white/90 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                    <h2 class="text-lg font-bold text-indigo-700" id="ar-target-name">เจอเป้าหมาย!</h2>
+                    <p class="text-xs text-gray-600">ปัดหน้าจอขึ้นเพื่อปาหลอดทดลอง</p>
+                </div>
+                <button onclick="closeARMode(false)" class="bg-red-500 text-white rounded-full p-2 shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <!-- แจ้งเตือนเมื่อจับสำเร็จ -->
+            <div id="result-box" class="hidden text-center bg-green-500 text-white rounded-xl p-5 shadow-2xl pointer-events-auto mt-auto mb-20">
+                <h1 class="text-2xl font-black mb-2">จับสำเร็จ! 🎉</h1>
+                <p class="text-sm mb-4">ระบบเก็บไอเทมเข้ากระเป๋าเรียบร้อยแล้ว</p>
+                <button onclick="closeARMode(true)" class="bg-white text-green-600 font-bold py-2 px-6 rounded-full shadow hover:bg-gray-100 active:scale-95">
+                    กลับไปแผนที่
+                </button>
+            </div>
+        </div>
     </div>
 
+
+    <!-- ==========================================
+         ส่วนที่ 3: JavaScript Logic ทั้งหมด
+         ========================================== -->
     <script>
-        // 1. ตั้งค่าพื้นฐานแผนที่
-        let map;
-        let playerMarker;
-        let playerCircle;
-        let playerLocation = null;
-        const CATCH_RADIUS = 15; // ระยะทางที่อนุญาตให้กดจับได้ (เมตร)
+        /* ----------------------------------------------------
+           ตัวแปร Global ที่ใช้ร่วมกัน
+        ---------------------------------------------------- */
+        const SCHOOL_CENTER = [17.40, 104.78]; // พิกัดศูนย์กลาง
+        const CATCH_RADIUS = 15; // รัศมีจับ (เมตร)
+        let map, playerMarker, playerCircle, playerLocation = null;
+        let currentTargetMarker = null; // เก็บว่าตอนนี้กำลังสู้กับ Marker ตัวไหน
 
-        // พิกัดเริ่มต้น (กรุณาเปลี่ยนเป็นพิกัดลานกว้างโรงเรียนของคุณ)
-        // ตัวอย่างนี้คือพิกัดสมมติ
-        const SCHOOL_CENTER = [17.40, 104.78]; 
-
-        // 2. กำหนดประเภทไอเทมที่จะเกิด (Emojis แทน Graphic 3D ใน Phase 1)
         const itemTypes = [
             { id: 'chem', icon: '🧪', name: 'ธาตุเคมีปริศนา' },
             { id: 'virus', icon: '🦠', name: 'ไวรัสกลายพันธุ์' },
-            { id: 'hardware', icon: '💻', name: 'ชิ้นส่วนเมนบอร์ด' },
-            { id: 'tool', icon: '🔭', name: 'กล้องโทรทรรศน์' }
+            { id: 'hardware', icon: '💻', name: 'ชิ้นส่วนเมนบอร์ด' }
         ];
 
-        // สร้าง Icon ของผู้เล่น
-        const playerIcon = L.divIcon({
-            html: '<div class="player-pulse"></div>',
-            className: '',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-        });
-
-        // 3. เริ่มต้นระบบแผนที่
+        /* ----------------------------------------------------
+           ระบบแผนที่ (Phase 1)
+        ---------------------------------------------------- */
         function initMap() {
             map = L.map('map', { zoomControl: false }).setView(SCHOOL_CENTER, 18);
-
-            // โหลดแผนที่จาก OpenStreetMap
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 20,
-                attribution: '© OpenStreetMap'
-            }).addTo(map);
-
-            // เริ่มติดตาม GPS ผู้เล่น
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
             startGPS();
-            
-            // สุ่มเกิดไอเทมรอบๆ โรงเรียน
             spawnItems(10); 
         }
 
-        // 4. ระบบติดตาม GPS
         function startGPS() {
             if ("geolocation" in navigator) {
-                navigator.geolocation.watchPosition(updatePlayerPosition, handleLocationError, {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 5000
-                });
-            } else {
-                document.getElementById('status-text').innerText = "บราวเซอร์ไม่รองรับ GPS";
+                navigator.geolocation.watchPosition(updatePlayerPosition, (err) => console.warn(err), { enableHighAccuracy: true });
             }
         }
 
-        function updatePlayerPosition(position) {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            playerLocation = L.latLng(lat, lng);
+        const playerIcon = L.divIcon({ html: '<div class="player-pulse"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
 
-            document.getElementById('status-text').innerText = "พบสัญญาณ GPS แล้ว (ความแม่นยำ: " + Math.round(position.coords.accuracy) + "ม.)";
+        function updatePlayerPosition(position) {
+            const lat = position.coords.latitude, lng = position.coords.longitude;
+            playerLocation = L.latLng(lat, lng);
+            document.getElementById('status-text').innerText = "พบสัญญาณ GPS แล้ว";
 
             if (!playerMarker) {
-                // สร้างตัวผู้เล่นครั้งแรก
                 playerMarker = L.marker([lat, lng], { icon: playerIcon, zIndexOffset: 1000 }).addTo(map);
-                playerCircle = L.circle([lat, lng], { radius: CATCH_RADIUS, color: '#4f46e5', weight: 1, opacity: 0.5, fillColor: '#818cf8', fillOpacity: 0.2 }).addTo(map);
+                playerCircle = L.circle([lat, lng], { radius: CATCH_RADIUS, color: '#4f46e5', fillOpacity: 0.2 }).addTo(map);
                 map.setView([lat, lng], 19);
             } else {
-                // อัปเดตตำแหน่ง
                 playerMarker.setLatLng([lat, lng]);
                 playerCircle.setLatLng([lat, lng]);
             }
         }
 
-        function handleLocationError(error) {
-            console.warn(`ERROR(${error.code}): ${error.message}`);
-            document.getElementById('status-text').innerText = "กรุณาเปิด GPS และอนุญาตให้เว็บเข้าถึงตำแหน่ง";
-        }
+        function centerMapOnPlayer() { if (playerLocation) map.setView(playerLocation, 19, { animate: true }); }
 
-        function centerMapOnPlayer() {
-            if (playerLocation) {
-                map.setView(playerLocation, 19, { animate: true });
-            }
-        }
-
-        // 5. ระบบสุ่มเกิดไอเทม (Spawning System)
         function spawnItems(amount) {
             for (let i = 0; i < amount; i++) {
-                // สุ่มพิกัดรอบๆ ศูนย์กลางโรงเรียน (รัศมีประมาณ 100 เมตร)
-                const latOffset = (Math.random() - 0.5) * 0.002;
-                const lngOffset = (Math.random() - 0.5) * 0.002;
-                const itemLat = SCHOOL_CENTER[0] + latOffset;
-                const itemLng = SCHOOL_CENTER[1] + lngOffset;
-                
-                // สุ่มประเภทไอเทม
+                const latOffset = (Math.random() - 0.5) * 0.002, lngOffset = (Math.random() - 0.5) * 0.002;
                 const randomItem = itemTypes[Math.floor(Math.random() * itemTypes.length)];
 
-                // สร้าง Icon แบบ Emoji
                 const customIcon = L.divIcon({
-                    html: `<div class="text-4xl drop-shadow-lg transform transition-transform hover:scale-110">${randomItem.icon}</div>`,
-                    className: '',
-                    iconSize: [40, 40],
-                    iconAnchor: [20, 20]
+                    html: `<div class="text-4xl drop-shadow-lg">${randomItem.icon}</div>`,
+                    iconSize: [40, 40], iconAnchor: [20, 20]
                 });
 
-                // วางบนแผนที่
-                const marker = L.marker([itemLat, itemLng], { icon: customIcon }).addTo(map);
+                const marker = L.marker([SCHOOL_CENTER[0] + latOffset, SCHOOL_CENTER[1] + lngOffset], { icon: customIcon }).addTo(map);
 
-                // ตรวจสอบระยะเมื่อคลิก
                 marker.on('click', function() {
-                    if (!playerLocation) {
-                        alert("รอสัญญาณ GPS สักครู่...");
-                        return;
-                    }
-
-                    // คำนวณระยะทางระหว่างผู้เล่นกับไอเทม
-                    const itemLocation = marker.getLatLng();
-                    const distance = map.distance(playerLocation, itemLocation);
+                    if (!playerLocation) { alert("รอสัญญาณ GPS สักครู่..."); return; }
+                    const distance = map.distance(playerLocation, marker.getLatLng());
 
                     if (distance <= CATCH_RADIUS) {
-                        // เข้าสู่ Phase 2 (โหมด AR)
-                        alert(`เจอแล้ว! ${randomItem.name}\nระยะห่าง: ${Math.round(distance)} เมตร\n\n>> กำลังเข้าสู่โหมดจับ (AR Canvas) <<`);
-                        // marker.remove(); // ลบออกจากแผนที่เมื่อกดจับ (จะทำใน Phase 2)
+                        currentTargetMarker = marker; // เก็บข้อมูลว่ากดตัวไหน
+                        startARMode(randomItem); // เรียกเปิดหน้า AR Overlay
                     } else {
-                        alert(`คุณอยู่ไกลเกินไป!\nระยะห่าง: ${Math.round(distance)} เมตร\nต้องเข้าไปใกล้กว่า ${CATCH_RADIUS} เมตรถึงจะจับได้`);
+                        alert(`คุณอยู่ไกลเกินไป! (ห่าง ${Math.round(distance)} เมตร)`);
                     }
                 });
             }
         }
 
-        // เริ่มทำงานเมื่อโหลดเว็บเสร็จ
+        /* ----------------------------------------------------
+           ระบบ AR Catching (Phase 2)
+        ---------------------------------------------------- */
+        let videoStream = null;
+        let animationId = null;
+        let gameState = 'ready';
+        let target = { x: 0, y: 0, size: 80, emoji: '' };
+        let tool = { x: 0, y: 0, size: 60, emoji: '🧪', scale: 1, vx: 0, vy: 0 };
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        async function startARMode(itemData) {
+            // 1. แสดง Overlay ซ้อนทับแผนที่
+            document.getElementById('ar-overlay').classList.remove('hidden');
+            document.getElementById('result-box').classList.add('hidden');
+            
+            // 2. เซ็ตข้อมูลเป้าหมาย
+            document.getElementById('ar-target-name').innerText = `เป้าหมาย: ${itemData.name}`;
+            target.emoji = itemData.icon;
+            
+            // 3. ปรับขนาด Canvas 
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            target.x = canvas.width / 2;
+            target.y = canvas.height * 0.3;
+            resetTool();
+
+            // 4. เปิดกล้อง
+            try {
+                const video = document.getElementById('camera');
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = videoStream;
+            } catch (err) {
+                console.warn("ไม่สามารถเปิดกล้องได้");
+                // ถ้าเปิดกล้องไม่ได้ ก็ยังให้เล่นได้โดยเป็นพื้นหลังดำแทน
+            }
+
+            // 5. เริ่มวาดเกม
+            drawAR();
+        }
+
+        // ฟังก์ชันสำหรับปิด AR Mode แล้วกลับไปหน้าแผนที่
+        function closeARMode(isSuccess) {
+            // หยุด Loop อนิเมชัน
+            cancelAnimationFrame(animationId);
+            
+            // ปิดการใช้งานกล้อง เพื่อประหยัดแบตเตอรี่!
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+
+            // ปิดหน้าต่าง Overlay
+            document.getElementById('ar-overlay').classList.add('hidden');
+
+            // ถ้าจับสำเร็จ ให้ลบเป้าหมายออกจากแผนที่
+            if (isSuccess && currentTargetMarker) {
+                map.removeLayer(currentTargetMarker);
+            }
+            currentTargetMarker = null;
+        }
+
+        /* ----- ฟิสิกส์การปา (คัดลอกมาจาก Phase 2) ----- */
+        function drawAR() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState !== 'caught') {
+                let floatY = Math.sin(Date.now() / 300) * 10;
+                ctx.font = `${target.size}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(target.emoji, target.x, target.y + floatY);
+            }
+
+            ctx.font = `${tool.size * tool.scale}px Arial`;
+            ctx.fillText(tool.emoji, tool.x, tool.y);
+
+            if (gameState === 'thrown') {
+                tool.x += tool.vx; tool.y += tool.vy; tool.vy += 0.8; tool.scale -= 0.015;
+                if (tool.scale <= 0.4) checkHit();
+                if (tool.y > canvas.height + 100) resetTool();
+            }
+
+            animationId = requestAnimationFrame(drawAR);
+        }
+
+        function checkHit() {
+            let dist = Math.sqrt(Math.pow(tool.x - target.x, 2) + Math.pow(tool.y - target.y, 2));
+            if (dist < target.size) {
+                gameState = 'caught';
+                document.getElementById('result-box').classList.remove('hidden');
+            } else {
+                tool.vy += 10;
+            }
+        }
+
+        function resetTool() {
+            tool.x = canvas.width / 2; tool.y = canvas.height - 100;
+            tool.scale = 1; tool.vx = 0; tool.vy = 0; gameState = 'ready';
+        }
+
+        /* ----- ควบคุมการปัดจอ ----- */
+        let startY = 0, startTime = 0;
+        canvas.addEventListener('touchstart', (e) => {
+            if (gameState !== 'ready') return;
+            const touch = e.touches[0];
+            if (Math.abs(touch.clientX - tool.x) < 50 && Math.abs(touch.clientY - tool.y) < 50) {
+                gameState = 'dragging'; startY = touch.clientY; startTime = Date.now();
+            }
+        });
+        canvas.addEventListener('touchmove', (e) => {
+            if (gameState === 'dragging') {
+                tool.x = e.touches[0].clientX; tool.y = e.touches[0].clientY;
+            }
+        });
+        canvas.addEventListener('touchend', (e) => {
+            if (gameState !== 'dragging') return;
+            let distY = startY - e.changedTouches[0].clientY;
+            let timeDiff = Date.now() - startTime;
+            if (distY > 50 && timeDiff < 500) {
+                gameState = 'thrown'; tool.vy = -(distY / timeDiff) * 15;
+            } else { resetTool(); }
+        });
+
+        // รันแผนที่ทันทีที่เว็บโหลดเสร็จ
         window.onload = initMap;
     </script>
 </body>
